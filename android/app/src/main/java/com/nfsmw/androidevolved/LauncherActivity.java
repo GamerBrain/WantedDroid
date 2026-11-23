@@ -80,7 +80,7 @@ public final class LauncherActivity extends Activity {
                 .setPositiveButton(tr("Aceptar"), (d, which) -> ReleaseUpdates.whatsNewSeen(this))
                 .setNeutralButton(tr("Ver en GitHub"), (d, which) -> {
                     ReleaseUpdates.whatsNewSeen(this);
-                    openUrl(Uri.parse("https://github.com/codepdbh/nfsmwpc-recompiled/releases/tag/v" + Uri.encode(version)));
+                    openUrl(Uri.parse("https://github.com/GamerBrain/WantedDroid/releases/tag/v" + Uri.encode(version)));
                 })
                 .setOnCancelListener(d -> ReleaseUpdates.whatsNewSeen(this))
                 .show();

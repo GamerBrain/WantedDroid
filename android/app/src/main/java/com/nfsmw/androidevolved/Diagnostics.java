@@ -31,7 +31,7 @@ import java.util.zip.ZipOutputStream;
  * attach.
  */
 final class Diagnostics {
-    static final String ISSUES = "https://github.com/codepdbh/nfsmwpc-recompiled/issues/new";
+    static final String ISSUES = "https://github.com/GamerBrain/WantedDroid/issues/new";
     private static final int LIMIT = 4 * 1024 * 1024;
     private static final String PREFS = "nfsmw_diagnostics";
 
