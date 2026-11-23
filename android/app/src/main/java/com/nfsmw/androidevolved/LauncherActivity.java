@@ -20,6 +20,9 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
+import android.widget.Toast;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -36,7 +39,7 @@ import java.util.concurrent.Executors;
  * right (Vulkan driver, resolution, frame cap, widescreen, compatibility).
  */
 public final class LauncherActivity extends Activity {
-    private static final int REQUEST_DRIVER_ZIP = 45, REQUEST_DRIVER_PROBE = 46;
+    private static final int REQUEST_DRIVER_ZIP = 45, REQUEST_DRIVER_PROBE = 46, REQUEST_MOD_ZIP = 47;
     // Launcher accent: Underground orange/red (the NFSU2 port is green).
     private static final int ACCENT = 0xFFFF7A1A;
     /** {label, guest language name, LANGUAGES/<file>.bin}. */
@@ -226,6 +229,7 @@ public final class LauncherActivity extends Activity {
         optionsList.addView(optionRow(tr("Idioma del juego"), languageLabel(), this::chooseLanguage));
         for (GameOptions.Option option : GameOptions.ALL)
             optionsList.addView(optionRow(tr(option.title), tr(option.label(GameOptions.get(this, option.key))), () -> chooseOption(option)));
+        optionsList.addView(optionRow(tr("Mods"), modsSummary(), this::showModsManager));
         optionsList.addView(optionRow(tr("Servidor online"), GameOptions.onlineServer(this), this::chooseOnlineServer));
         optionsList.addView(optionRow(tr("Buscar actualizaciones"),
                 checkingUpdates ? tr("Comprobando GitHub…") : tr("Versión %s", ReleaseUpdates.installed(this)), () -> checkUpdates(true)));
@@ -466,6 +470,8 @@ public final class LauncherActivity extends Activity {
                     main.post(() -> { refresh(); message(tr("Driver Vulkan"), tr("No se pudo importar el driver: ") + error.getMessage()); });
                 }
             });
+        } else if (requestCode == REQUEST_MOD_ZIP && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            importModZip(data.getData());
         }
     }
 
@@ -540,14 +546,43 @@ public final class LauncherActivity extends Activity {
     private static final String[] WEAK_GPU_SOCS = {"MT6855", "MT6765", "MT6762", "MT6768", "MT6769", "MT6785",
             "MT6789", "MT6833", "MT6835", "T606", "T612", "T616", "T618", "UMS9230", "SC9863", "SM6225", "SM4350",
             "SM4450", "SM6115"};
+    // Unisoc + Mali-G57 low-end targets (e.g. T616) benefit from a more conservative stable profile.
+    private static final String[] UNISOC_STABLE_SOCS = {"T606", "T612", "T616", "T618", "UMS9230", "SC9863"};
 
     private boolean suggestLighterSettings() {
         if (Build.VERSION.SDK_INT < 31 || GameOptions.prefs(this).getBoolean("light_settings_asked", false)) return false;
         String soc = Build.SOC_MODEL == null ? "" : Build.SOC_MODEL.toUpperCase(java.util.Locale.ROOT);
-        boolean weak = false;
+        boolean weak = false, unisocStable = false;
         for (String model : WEAK_GPU_SOCS) if (soc.contains(model)) weak = true;
+        for (String model : UNISOC_STABLE_SOCS) if (soc.contains(model)) unisocStable = true;
+        // Also detect Mali-G57 by renderer on devices where SOC_MODEL is unavailable/unexpected.
+        if (!unisocStable) {
+            String renderer = GpuAdvice.renderer(this).toLowerCase(java.util.Locale.ROOT);
+            if (renderer.contains("mali-g57")) unisocStable = true;
+        }
         String resolution = GameOptions.get(this, GameOptions.RESOLUTION);
-        if (!weak || !(resolution.equals("100") || resolution.equals("75"))) return false;
+        String fps = GameOptions.get(this, GameOptions.FPS);
+        String textures = GameOptions.get(this, GameOptions.TEXTURES);
+        boolean heavy = resolution.equals("100") || resolution.equals("75") || resolution.equals("720") || resolution.equals("50");
+        boolean unstableCombo = "120".equals(fps) || "0".equals(fps) || "auto".equals(textures);
+        if (!weak && !unisocStable) return false;
+        if (unisocStable) {
+            // Recommend full stable profile unless already conservative enough.
+            if (resolution.equals("360") && ("30".equals(fps) || "60".equals(fps)) && "cpu".equals(textures)) return false;
+            GameOptions.prefs(this).edit().putBoolean("light_settings_asked", true).apply();
+            new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle(tr("Perfil estable para Unisoc/Mali"))
+                    .setMessage(tr("Tu dispositivo (Unisoc T616/Mali-G57) puede tener mejor estabilidad con ajustes conservadores: 360p, 60 FPS y texturas en CPU. Esto ayuda a evitar cierres y tirones en el driver Vulkan del sistema. Puedes cambiarlo después en Opciones."))
+                    .setPositiveButton(tr("Usar perfil estable"), (dialog, which) -> {
+                        applyStableProfile();
+                        refreshOptions();
+                        play();
+                    })
+                    .setNegativeButton(tr("Jugar así"), (dialog, which) -> play())
+                    .show();
+            return true;
+        }
+        if (!heavy && !unstableCombo) return false;
         GameOptions.prefs(this).edit().putBoolean("light_settings_asked", true).apply();
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle(tr("Ajustes para tu teléfono"))
@@ -560,6 +595,16 @@ public final class LauncherActivity extends Activity {
                 .setNegativeButton(tr("Jugar así"), (dialog, which) -> play())
                 .show();
         return true;
+    }
+
+    private void applyStableProfile() {
+        GameOptions.prefs(this).edit()
+                .putString(GameOptions.RESOLUTION, "360")
+                .putString(GameOptions.FPS, "60")
+                .putString(GameOptions.TEXTURES, "cpu")
+                .putString(GameOptions.LATENCY, "2")
+                .putString(GameOptions.WIDESCREEN, "on")
+                .apply();
     }
 
     private void launch() {
@@ -586,6 +631,161 @@ public final class LauncherActivity extends Activity {
                 .putExtra("onlineServer", GameOptions.onlineServer(this))
                 .putExtra("driverLoader", loader));
     }
+
+
+    // ---- Mods ------------------------------------------------------------------------------------------
+
+    private String modsSummary() {
+        try {
+            java.util.List<ModManager.Mod> mods = ModManager.loadMods();
+            int enabled = 0; for (ModManager.Mod m : mods) if (m.enabled) enabled++;
+            if (mods.isEmpty()) return tr("Sin mods instalados");
+            return tr("%d instalado(s) · %d activo(s)", mods.size(), enabled);
+        } catch (Exception e) {
+            return tr("Gestionar mods");
+        }
+    }
+
+    private void showModsManager() {
+        if (!allowed()) { message(tr("Mods"), tr("Permite el acceso a archivos para gestionar mods en memoria interna/nfsmw/Mods.")); return; }
+        java.util.List<ModManager.Mod> mods = ModManager.loadMods();
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(8), dp(16), dp(8));
+
+        TextView help = label(tr("Los mods se aplican como capa sobre los archivos del juego (texturas, gráficos, coches reemplazables/agregables, vinilos, body kits, etc.). Los cambios se aplican al pulsar JUGAR. Carpeta: nfsmw/Mods"), 12, 0xBBFFFFFF, false);
+        help.setPadding(0, 0, 0, dp(8));
+        content.addView(help);
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(list);
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, dp(280));
+        content.addView(scroll, scrollLp);
+        Runnable[] rebuild = new Runnable[1];
+        rebuild[0] = () -> {
+            list.removeAllViews();
+            java.util.List<ModManager.Mod> current = ModManager.loadMods();
+            if (current.isEmpty()) {
+                list.addView(label(tr("No hay mods instalados. Usa \"Instalar mod (.zip)\" para añadir uno."), 13, 0x99FFFFFF, false));
+                return;
+            }
+            for (ModManager.Mod mod : current) {
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setPadding(dp(10), dp(8), dp(10), dp(8));
+                GradientDrawable bg = new GradientDrawable();
+                bg.setColor(mod.enabled ? 0x22FF7A1A : 0x10FFFFFF);
+                bg.setCornerRadius(dp(10));
+                row.setBackground(bg);
+
+                LinearLayout top = new LinearLayout(this);
+                top.setGravity(Gravity.CENTER_VERTICAL);
+                CheckBox cb = new CheckBox(this);
+                cb.setChecked(mod.enabled);
+                cb.setText(mod.name != null ? mod.name : mod.folder);
+                cb.setTextColor(Color.WHITE);
+                cb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                cb.setOnCheckedChangeListener((CompoundButton buttonView, boolean isChecked) -> {
+                    mod.enabled = isChecked;
+                    java.util.List<ModManager.Mod> all = ModManager.loadMods();
+                    for (ModManager.Mod m : all) if (m.folder.equalsIgnoreCase(mod.folder)) { m.enabled = isChecked; break; }
+                    java.util.List<ModManager.Mod> reordered = new java.util.ArrayList<>();
+                    if (isChecked) {
+                        for (ModManager.Mod m : all) if (m.folder.equalsIgnoreCase(mod.folder)) reordered.add(m);
+                        for (ModManager.Mod m : all) if (!m.folder.equalsIgnoreCase(mod.folder) && m.enabled) reordered.add(m);
+                        for (ModManager.Mod m : all) if (!m.folder.equalsIgnoreCase(mod.folder) && !m.enabled) reordered.add(m);
+                    } else {
+                        for (ModManager.Mod m : all) if (m.enabled && !m.folder.equalsIgnoreCase(mod.folder)) reordered.add(m);
+                        for (ModManager.Mod m : all) if (!m.enabled || m.folder.equalsIgnoreCase(mod.folder)) reordered.add(m);
+                    }
+                    ModManager.saveConfig(reordered);
+                    rebuild[0].run();
+                    refreshOptions();
+                });
+                top.addView(cb, new LinearLayout.LayoutParams(0, -2, 1f));
+                TextView del = label(tr("Eliminar"), 12, 0xFFFF6B6B, true);
+                del.setPadding(dp(8), dp(4), dp(4), dp(4));
+                del.setOnClickListener(v -> new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        .setTitle(tr("Eliminar mod"))
+                        .setMessage(tr("¿Eliminar \"%s\"? Esto borrará sus archivos de nfsmw/Mods.", mod.name != null ? mod.name : mod.folder))
+                        .setPositiveButton(tr("Eliminar"), (d, w) -> worker.execute(() -> {
+                            ModManager.deleteMod(mod);
+                            main.post(() -> { rebuild[0].run(); refreshOptions(); });
+                        }))
+                        .setNegativeButton(tr("Cancelar"), null).show());
+                top.addView(del);
+                row.addView(top);
+
+                String desc = ModManager.describeMod(mod);
+                if (desc == null || desc.isEmpty()) desc = mod.folder;
+                TextView info = label(desc + (mod.enabled ? tr(" · activo") : tr(" · desactivado")), 11, 0x99FFFFFF, false);
+                info.setPadding(dp(36), 0, 0, 0);
+                row.addView(info);
+
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                lp.bottomMargin = dp(6);
+                list.addView(row, lp);
+            }
+        };
+        rebuild[0].run();
+
+        AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(tr("Mods"))
+                .setView(content)
+                .setPositiveButton(tr("Cerrar"), null)
+                .setNeutralButton(tr("Instalar mod (.zip)"), null)
+                .show();
+        if (dialog.getButton(AlertDialog.BUTTON_NEUTRAL) != null)
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> pickModZip());
+    }
+
+    private void pickModZip() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/zip");
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {"application/zip", "application/x-zip-compressed", "application/octet-stream"});
+            startActivityForResult(intent, REQUEST_MOD_ZIP);
+        } catch (Exception e) {
+            try {
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                startActivityForResult(Intent.createChooser(intent, tr("Selecciona un mod (.zip)")), REQUEST_MOD_ZIP);
+            } catch (Exception ex) {
+                message(tr("Mods"), tr("No se pudo abrir el selector de archivos."));
+            }
+        }
+    }
+
+    private void importModZip(Uri uri) {
+        if (!allowed()) { message(tr("Mods"), tr("Permite el acceso a archivos primero.")); return; }
+        String name = uri.getLastPathSegment();
+        if (name != null) {
+            int slash = name.lastIndexOf('/');
+            if (slash >= 0) name = name.substring(slash + 1);
+            try { name = Uri.decode(name); } catch (Exception ignored) { }
+        }
+        final String displayName = name;
+        status.setText(tr("Instalando mod…"));
+        Toast.makeText(this, tr("Instalando mod…"), Toast.LENGTH_SHORT).show();
+        worker.execute(() -> {
+            try {
+                ModManager.Mod mod = ModManager.importZip(this, uri, displayName);
+                main.post(() -> {
+                    Toast.makeText(this, tr("Mod instalado: %s", mod.name), Toast.LENGTH_LONG).show();
+                    refresh();
+                    showModsManager();
+                });
+            } catch (Exception e) {
+                final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                main.post(() -> message(tr("Mods"), tr("No se pudo instalar el mod: %s", msg)));
+            }
+        });
+    }
+
 
     // ---- Storage ---------------------------------------------------------------------------------------
 

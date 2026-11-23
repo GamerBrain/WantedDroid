@@ -128,6 +128,22 @@ if(NFS_GUEST_LTO)
     target_link_options(nfsmw_android PRIVATE -flto=thin "-Wl,--thinlto-jobs=4"
         "-Wl,--thinlto-cache-dir=${CMAKE_BINARY_DIR}/thinlto-cache")
 endif()
+
+# Optional Rust coexistence: link a prebuilt nfsmw_mods static library (built with cargo/cargo-ndk
+# for the active Android ABI) to enable Rust-based mod validation/helpers from native code.
+# Example: -DNFSMW_RUST_MODS_LIB=/path/to/<abi>/libnfsmw_mods.a
+set(NFSMW_RUST_MODS_LIB "" CACHE FILEPATH "Path to prebuilt libnfsmw_mods static library (Rust)")
+if(NFSMW_RUST_MODS_LIB)
+    if(EXISTS "${NFSMW_RUST_MODS_LIB}")
+        message(STATUS "NFSMW: enabling Rust mod helper: ${NFSMW_RUST_MODS_LIB}")
+        target_include_directories(nfsmw_android PRIVATE "${NFS_ROOT}/rust/nfsmw_mods/include")
+        target_link_libraries(nfsmw_android PRIVATE "${NFSMW_RUST_MODS_LIB}")
+        target_compile_definitions(nfsmw_android PRIVATE NFS_RUST_MODS)
+    else()
+        message(WARNING "NFSMW_RUST_MODS_LIB set but not found: ${NFSMW_RUST_MODS_LIB}")
+    endif()
+endif()
+
 # linkernsbypass has data symbols named like libdl's functions; exporting them breaks
 # the system loader when it opens the vendor namespace (MW port note).
 # Only adrenotools' archives: excluding ALL would also hide native_app_glue's

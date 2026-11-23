@@ -126,12 +126,12 @@ final class Lang {
         add("Recomendado: el driver del sistema. Turnip para esta Adreno es experimental.",
                 "Recommended: the system driver. Turnip for this Adreno is experimental.",
                 "Recomendado: o driver do sistema. Turnip para esta Adreno é experimental.");
-        add("Recomendado para tu GPU Mali: PanVK (Mesa) si el driver del sistema va lento o con errores gráficos. Turnip no sirve para Mali.",
-                "Recommended for your Mali GPU: PanVK (Mesa) if the system driver is slow or shows graphics glitches. Turnip does not work on Mali.",
-                "Recomendado para a sua GPU Mali: PanVK (Mesa) se o driver do sistema estiver lento ou com erros gráficos. Turnip não funciona em Mali.");
-        add("Recomendado: el driver del sistema. PanVK en Mali-G52/G72/G76 o más antiguas es experimental, y Turnip no sirve para Mali.",
-                "Recommended: the system driver. PanVK on Mali-G52/G72/G76 or older is experimental, and Turnip does not work on Mali.",
-                "Recomendado: o driver do sistema. PanVK em Mali-G52/G72/G76 ou mais antigas é experimental, e Turnip não funciona em Mali.");
+        add("Recomendado: driver del sistema. En Unisoc T616/Mali-G57 usa perfil estable (360p o 480p, 60 FPS y texturas en CPU si hay fallos gráficos). PanVK (Mesa) es experimental y Turnip no sirve para Mali.",
+                "Recommended: system driver. On Unisoc T616/Mali-G57 use the stable profile (360p or 480p, 60 FPS, and CPU textures if there are graphics glitches). PanVK (Mesa) is experimental and Turnip does not work on Mali.",
+                "Recomendado: driver do sistema. No Unisoc T616/Mali-G57 use o perfil estável (360p ou 480p, 60 FPS e texturas na CPU se houver falhas gráficas). PanVK (Mesa) é experimental e Turnip não funciona em Mali.");
+        add("Recomendado: driver del sistema. En GPUs Mali antiguas usa perfil estable (360p-480p, 30-60 FPS y texturas en CPU si hay fallos). PanVK es experimental y Turnip no sirve para Mali.",
+                "Recommended: system driver. On older Mali GPUs use the stable profile (360p-480p, 30-60 FPS, and CPU textures if there are glitches). PanVK is experimental and Turnip does not work on Mali.",
+                "Recomendado: driver do sistema. Em GPUs Mali antigas use o perfil estável (360p-480p, 30-60 FPS e texturas na CPU se houver falhas). PanVK é experimental e Turnip não funciona em Mali.");
         add("Recomendado: el driver del sistema. No hay un driver alternativo estable para PowerVR; Turnip y PanVK no funcionan en esta GPU.",
                 "Recommended: the system driver. There is no stable replacement driver for PowerVR; Turnip and PanVK do not work on this GPU.",
                 "Recomendado: o driver do sistema. Não há driver alternativo estável para PowerVR; Turnip e PanVK não funcionam nesta GPU.");
@@ -149,6 +149,32 @@ final class Lang {
                 "This phone's GPU cannot keep up at native or 75% resolution: the game runs slowly and the sound cuts out. Use 50% resolution? You can change it later in Options.",
                 "A GPU deste telefone não aguenta a resolução nativa ou 75%: o jogo fica lento e o som corta. Usar resolução de 50%? Você pode mudar depois em Opções.");
         add("Usar ajustes ligeros", "Use light settings", "Usar ajustes leves");
+
+        add("Perfil estable para Unisoc/Mali", "Stable profile for Unisoc/Mali", "Perfil estável para Unisoc/Mali");
+        add("Tu dispositivo (Unisoc T616/Mali-G57) puede tener mejor estabilidad con ajustes conservadores: 360p, 60 FPS y texturas en CPU. Esto ayuda a evitar cierres y tirones en el driver Vulkan del sistema. Puedes cambiarlo después en Opciones.",
+                "Your device (Unisoc T616/Mali-G57) may run more stably with conservative settings: 360p, 60 FPS, and CPU textures. This helps avoid crashes and stutter on the system Vulkan driver. You can change it later in Options.",
+                "Seu dispositivo (Unisoc T616/Mali-G57) pode rodar com mais estabilidade usando ajustes conservadores: 360p, 60 FPS e texturas na CPU. Isso ajuda a evitar falhas e travamentos no driver Vulkan do sistema. Você pode mudar depois em Opções.");
+        add("Usar perfil estable", "Use stable profile", "Usar perfil estável");
+        add("Mods", "Mods", "Mods");
+        add("Sin mods instalados", "No mods installed", "Sem mods instalados");
+        add("%d instalado(s) · %d activo(s)", "%d installed · %d active", "%d instalado(s) · %d ativo(s)");
+        add("Gestionar mods", "Manage mods", "Gerenciar mods");
+        add("Permite el acceso a archivos para gestionar mods en memoria interna/nfsmw/Mods.", "Allow file access to manage mods in internal storage/nfsmw/Mods.", "Permita o acesso aos arquivos para gerenciar mods em armazenamento interno/nfsmw/Mods.");
+        add("Los mods se aplican como capa sobre los archivos del juego (texturas, gráficos, coches reemplazables/agregables, vinilos, body kits, etc.). Los cambios se aplican al pulsar JUGAR. Carpeta: nfsmw/Mods", "Mods are applied as an overlay over game files (textures, graphics, replaceable/add-on cars, vinyls, body kits, etc.). Changes apply when you press PLAY. Folder: nfsmw/Mods", "Os mods são aplicados como uma camada sobre os arquivos do jogo (texturas, gráficos, carros substituíveis/adicionáveis, vinis, body kits etc.). As mudanças são aplicadas ao tocar em JOGAR. Pasta: nfsmw/Mods");
+        add("No hay mods instalados. Usa \"Instalar mod (.zip)\" para añadir uno.", "No mods installed. Use \"Install mod (.zip)\" to add one.", "Nenhum mod instalado. Use \"Instalar mod (.zip)\" para adicionar um.");
+        add("Eliminar", "Delete", "Excluir");
+        add("Eliminar mod", "Delete mod", "Excluir mod");
+        add("¿Eliminar \"%s\"? Esto borrará sus archivos de nfsmw/Mods.", "Delete \"%s\"? This will remove its files from nfsmw/Mods.", "Excluir \"%s\"? Isso apagará os arquivos de nfsmw/Mods.");
+        add(" · activo", " · active", " · ativo");
+        add(" · desactivado", " · disabled", " · desativado");
+        add("Cerrar", "Close", "Fechar");
+        add("Instalar mod (.zip)", "Install mod (.zip)", "Instalar mod (.zip)");
+        add("Selecciona un mod (.zip)", "Select a mod (.zip)", "Selecione um mod (.zip)");
+        add("No se pudo abrir el selector de archivos.", "Could not open the file picker.", "Não foi possível abrir o seletor de arquivos.");
+        add("Permite el acceso a archivos primero.", "Allow file access first.", "Permita o acesso aos arquivos primeiro.");
+        add("Instalando mod…", "Installing mod…", "Instalando mod…");
+        add("Mod instalado: %s", "Mod installed: %s", "Mod instalado: %s");
+        add("No se pudo instalar el mod: %s", "Could not install mod: %s", "Não foi possível instalar o mod: %s");
         add("Jugar así", "Play like this", "Jogar assim");
         add("Cerrar", "Close", "Fechar");
         add("El modo online del juego (EA Nation) se conecta a este servidor de la comunidad en lugar de los servidores de EA, ya cerrados.",

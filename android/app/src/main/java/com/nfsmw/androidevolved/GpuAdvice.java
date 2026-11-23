@@ -93,9 +93,9 @@ final class GpuAdvice {
             case ADRENO_SYSTEM:
                 return "Recomendado: el driver del sistema. Turnip para esta Adreno es experimental.";
             case MALI_VALHALL:
-                return "Recomendado para tu GPU Mali: PanVK (Mesa) si el driver del sistema va lento o con errores gráficos. Turnip no sirve para Mali.";
+                return "Recomendado: driver del sistema. En Unisoc T616/Mali-G57 usa perfil estable (360p o 480p, 60 FPS y texturas en CPU si hay fallos gráficos). PanVK (Mesa) es experimental y Turnip no sirve para Mali.";
             case MALI_OLDER:
-                return "Recomendado: el driver del sistema. PanVK en Mali-G52/G72/G76 o más antiguas es experimental, y Turnip no sirve para Mali.";
+                return "Recomendado: driver del sistema. En GPUs Mali antiguas usa perfil estable (360p-480p, 30-60 FPS y texturas en CPU si hay fallos). PanVK es experimental y Turnip no sirve para Mali.";
             case POWERVR:
                 return "Recomendado: el driver del sistema. No hay un driver alternativo estable para PowerVR; Turnip y PanVK no funcionan en esta GPU.";
             case XCLIPSE:

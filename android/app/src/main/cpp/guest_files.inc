@@ -1,37 +1,155 @@
 std::string guestWorkingDirectory="C:\\nfsmw";
+std::vector<std::filesystem::path> guestModRoots;
+bool guestModsLoaded=false;
+
+#ifdef NFS_RUST_MODS
+extern "C" {
+#include "nfsmw_mods.h"
+}
+#endif
+
+std::string normalizeGuestPath(std::string guest){
+    std::replace(guest.begin(),guest.end(),'\\','/');
+    auto normalized=lower(guest);
+    if(normalized=="c:/nfsmw") return std::string();
+    if(normalized.rfind("c:/nfsmw/",0)==0) return guest.substr(9);
+    return guest;
+}
+
+void loadGuestModRoots(){
+    guestModRoots.clear();
+    guestModsLoaded=true;
+    std::error_code error;
+    auto modsDir=std::filesystem::path(hostGameRoot)/"Mods";
+    if(!std::filesystem::is_directory(modsDir,error)) return;
+    // Read enabled mod folders from Mods/mods.conf (one folder per line, highest priority first)
+    // or Mods/enabled.txt for compatibility. Mods/mods.json is managed by the launcher; native
+    // reads a simple line-based companion written alongside it for robustness without a JSON parser.
+    auto readList=[&](const std::filesystem::path& file){
+        std::ifstream in(file);
+        if(!in) return false;
+        std::string line; bool any=false;
+        while(std::getline(in,line)){
+            while(!line.empty()&&(line.back()=='\r'||line.back()=='\n'||line.back()==' '||line.back()=='\t')) line.pop_back();
+            size_t start=line.find_first_not_of(" \t\r"); if(start==std::string::npos) continue; line=line.substr(start);
+            if(line.empty()||line[0]=='#') continue;
+#ifdef NFS_RUST_MODS
+            if(!nfsmw_mods_is_safe_folder_name(line.c_str())){
+                NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Ignoring invalid mod entry (Rust): %s",line.c_str());
+                continue;
+            }
+#else
+            if(line.find('/')!=std::string::npos || line.find('\\')!=std::string::npos || line.find("..")!=std::string::npos || line=="." || line.size()>128){
+                NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Ignoring invalid mod entry: %s",line.c_str());
+                continue;
+            }
+#endif
+            std::error_code e; auto path=modsDir/line;
+            if(std::filesystem::is_directory(path,e)){
+                guestModRoots.push_back(path); any=true;
+                NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Mod enabled: %s",line.c_str());
+            } else {
+                NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Mod folder missing, skipped: %s",line.c_str());
+            }
+        }
+        return any;
+    };
+    if(!readList(modsDir/"mods.conf")) readList(modsDir/"enabled.txt");
+    if(!guestModRoots.empty())
+        NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Loaded %zu mod overlay(s)",guestModRoots.size());
+}
+
+void ensureGuestModsLoaded(){ if(!guestModsLoaded) loadGuestModRoots(); }
+
 void logicalDrives(){ret(4,0);}
 void driveType(){auto path=lower(guestString(arg(0)));ret(path.empty()||path.rfind("c:",0)==0?3:1,1);}
 uint32_t fileError(){switch(errno){case ENOENT:return 2;case EACCES:case EPERM:return 5;case EEXIST:return 80;case ENOSPC:return 112;case EBADF:return 6;default:return 1;}}
-std::filesystem::path gamePath(std::string guest){
-    std::replace(guest.begin(),guest.end(),'\\','/');auto normalized=lower(guest);
-    if(normalized=="c:/nfsmw")guest.clear();
-    else if(normalized.rfind("c:/nfsmw/",0)==0)guest=guest.substr(9);
+
+struct DirEntryCache {
+    std::map<std::string,std::map<std::string,std::string>> dirs; // dir key -> (lower name -> actual name)
+    const std::map<std::string,std::string>& entries(const std::filesystem::path& dir){
+        auto key=dir.string();
+        auto it=dirs.find(key);
+        if(it!=dirs.end()) return it->second;
+        auto& map=dirs[key];
+        std::error_code error;
+        for(auto& entry:std::filesystem::directory_iterator(dir,error))
+            map[lower(entry.path().filename().string())]=entry.path().filename().string();
+        return map;
+    }
+};
+DirEntryCache g_dirCache;
+
+std::filesystem::path resolveCaseInsensitive(const std::filesystem::path& root,const std::filesystem::path& relative){
+    auto result=root;
+    for(const auto& part:relative){
+        if(part=="."||part.empty()) continue;
+        const auto& map=g_dirCache.entries(result);
+        auto it=map.find(lower(part.string()));
+        if(it!=map.end()) result/=it->second; else result/=part;
+    }
+    return result;
+}
+
+std::filesystem::path resolveGameRelative(const std::string& relativeStr,const std::filesystem::path& root){
+    auto relative=std::filesystem::path(relativeStr).lexically_normal();
+    for(const auto& part:relative) if(part=="..") throw GuestStop("Guest path leaves nfsmw: "+relativeStr);
+    auto result=resolveCaseInsensitive(root,relative);
+    auto weakRoot=std::filesystem::weakly_canonical(root);
+    auto resolved=std::filesystem::weakly_canonical(result);
+    auto check=resolved.lexically_relative(weakRoot);
+    for(const auto& part:check) if(part=="..") throw GuestStop("Guest symlink leaves data root");
+    return result;
+}
+
+std::filesystem::path gamePath(std::string guest,bool forWrite=false){
+    ensureGuestModsLoaded();
+    std::replace(guest.begin(),guest.end(),'\\','/');
+    auto normalized=lower(guest);
+    std::string relativeStr;
+    if(normalized=="c:/nfsmw") relativeStr.clear();
+    else if(normalized.rfind("c:/nfsmw/",0)==0) relativeStr=guest.substr(9);
     else if(guest.find(':')!=std::string::npos||guest.rfind("//",0)==0){
         // Outside the game folder (Most Wanted probes C:\bin.dat): a sandbox under
         // nfsmw/_outside, so a read finds nothing, as on a PC without the file.
         std::string flat;for(char c:guest)flat+=(c==':'||c=='/')?'_':c;
         static unsigned logged=0;if(++logged<=8)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Guest path outside the game folder: %s -> _outside/%s",guest.c_str(),flat.c_str());
         return std::filesystem::path(hostGameRoot)/"_outside"/flat;
+    } else {
+        if(!guest.empty()&&guest.front()=='/') guest.erase(0,1);
+        else {
+            auto current=guestWorkingDirectory.substr(8); std::replace(current.begin(),current.end(),'\\','/');
+            if(!current.empty()) guest=current+"/"+guest;
+        }
+        relativeStr=guest;
     }
-    else {if(!guest.empty()&&guest.front()=='/')guest.erase(0,1);else{auto current=guestWorkingDirectory.substr(8);std::replace(current.begin(),current.end(),'\\','/');if(!current.empty())guest=current+"/"+guest;}}
-    auto relative=std::filesystem::path(guest).lexically_normal();for(const auto& part:relative)if(part=="..")throw GuestStop("Guest path leaves nfsmw: "+guest);
-    auto result=std::filesystem::path(hostGameRoot);
-    for(const auto& part:relative){if(part==".")continue;std::error_code error;bool found=false;
-        for(auto& entry:std::filesystem::directory_iterator(result,error))if(lower(entry.path().filename().string())==lower(part.string())){result=entry.path();found=true;break;}
-        if(!found)result/=part;
+    auto baseRoot=std::filesystem::path(hostGameRoot);
+    if(forWrite) return resolveGameRelative(relativeStr,baseRoot);
+    // Mod overlay for reads: highest-priority mod first, then base game.
+    std::error_code error;
+    for(const auto& modRoot:guestModRoots){
+        auto candidate=resolveGameRelative(relativeStr,modRoot);
+        if(std::filesystem::exists(candidate,error)) return candidate;
     }
-    auto root=std::filesystem::weakly_canonical(hostGameRoot);auto resolved=std::filesystem::weakly_canonical(result);
-    auto check=resolved.lexically_relative(root);for(const auto& part:check)if(part=="..")throw GuestStop("Guest symlink leaves data root");return resolved;
+    return resolveGameRelative(relativeStr,baseRoot);
 }
-std::map<uint32_t,int> fileHandles;uint32_t nextFileHandle=0xf0060000;
+
 // The game skips its CD-drive check when the game folder holds a file named
 // "foobar" (its developer switch, 0x0057CAC0("foobar")). Copies made without
 // it showed the insert-disc MessageBoxA. Present it as an empty file when absent.
 bool discCheckSwitch(const std::filesystem::path& path){
     std::error_code error;
-    return lower(path.filename().string())=="foobar"&&!std::filesystem::exists(path,error)&&
-        std::filesystem::weakly_canonical(path.parent_path())==std::filesystem::weakly_canonical(hostGameRoot);
+    if(lower(path.filename().string())!="foobar") return false;
+    if(std::filesystem::exists(path,error)) return false;
+    auto weakBase=std::filesystem::weakly_canonical(hostGameRoot);
+    auto parent=std::filesystem::weakly_canonical(path.parent_path(),error);
+    if(!error && parent==weakBase) return true;
+    // Also allow foobar in a mod root overlaying the game root.
+    for(const auto& modRoot:guestModRoots)
+        if(!error && parent==std::filesystem::weakly_canonical(modRoot,error)) return true;
+    return false;
 }
+
 bool closeGuestFile(uint32_t handle){auto file=fileHandles.find(handle);if(file==fileHandles.end())return false;::close(file->second);fileHandles.erase(file);return true;}
 void fileType(){
     uint32_t handle=arg(0);
@@ -41,18 +159,28 @@ void fileType(){
 }
 void longPath(){
     auto path=gamePath(guestString(arg(0)));std::error_code error;if(!std::filesystem::exists(path,error)){lastError=2;ret(0,3);return;}
-    auto relative=path.lexically_relative(std::filesystem::weakly_canonical(hostGameRoot)).string();
+    auto weakBase=std::filesystem::weakly_canonical(hostGameRoot);
+    auto relative=path.lexically_relative(weakBase).string();
+    if(relative.empty()||relative.rfind("..",0)==0){
+        // File came from a mod overlay: report it as if it lives in the base game folder.
+        auto req=normalizeGuestPath(guestString(arg(0))); std::replace(req.begin(),req.end(),'/','\\');
+        std::string logical="C:\\nfsmw"; if(!req.empty()) logical+="\\"+req; else logical+="\\";
+        if(arg(2)<=logical.size()){ret(logical.size()+1,3);return;}
+        std::memcpy(ptr(arg(1),logical.size()+1),logical.c_str(),logical.size()+1);ret(logical.size(),3);return;
+    }
     std::string result="C:\\nfsmw";if(relative!="."&&!relative.empty())result+="\\"+relative;std::replace(result.begin(),result.end(),'/','\\');
     if(arg(2)<=result.size()){ret(result.size()+1,3);return;}std::memcpy(ptr(arg(1),result.size()+1),result.c_str(),result.size()+1);ret(result.size(),3);
 }
 void createFile(){
-    auto path=gamePath(guestString(arg(0)));uint32_t access=arg(1),disposition=arg(4),flags=arg(5);
+    uint32_t access=arg(1),disposition=arg(4),flags=arg(5);
     if(flags&0x40000000u)throw GuestStop("Overlapped CreateFile requires asynchronous file service");
+    bool forWrite=(access&0x40000000u)!=0 || disposition==1 || disposition==2 || disposition==4 || disposition==5;
+    auto path=gamePath(guestString(arg(0)),forWrite);
     int options=access&0x40000000u?(access&0x80000000u?O_RDWR:O_WRONLY):O_RDONLY;
     switch(disposition){case 1:options|=O_CREAT|O_EXCL;break;case 2:options|=O_CREAT|O_TRUNC;break;case 3:break;case 4:options|=O_CREAT;break;case 5:options|=O_TRUNC;break;default:lastError=87;ret(UINT32_MAX,7);return;}
     bool existed=std::filesystem::exists(path);
     int descriptor=disposition==3&&!(access&0x40000000u)&&discCheckSwitch(path) ? ::open("/dev/null",O_RDONLY|O_CLOEXEC) : ::open(path.c_str(),options|O_CLOEXEC,0600);
-    NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Guest file %s access=%x disposition=%u",path.filename().string().c_str(),access,disposition);
+    NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Guest file %s access=%x disposition=%u%s",path.filename().string().c_str(),access,disposition,forWrite?"":" (overlay)");
     if(descriptor<0){lastError=fileError();ret(UINT32_MAX,7);return;}uint32_t handle=nextFileHandle++;fileHandles.emplace(handle,descriptor);lastError=(disposition==2||disposition==4)&&existed?183:0;ret(handle,7);
 }
 void readFile(){
@@ -116,7 +244,7 @@ void shellFolderPath(){
     *static_cast<char*>(ptr(out,1))=0;
     if(arg(2)||arg(3)>1||(folder&~0xc0ffu)){ret(0x80070057u,5);return;}
     std::string suffix;switch(folder&0xff){case 0x1c:suffix="AppData\\Local";break;case 0x1a:suffix="AppData\\Roaming";break;case 5:suffix="Documents";break;default:ret(0x80070057u,5);return;}
-    std::string logical="C:\\nfsmw\\"+suffix;auto path=gamePath(logical);std::error_code error;
+    std::string logical="C:\\nfsmw\\"+suffix;auto path=gamePath(logical,true);std::error_code error;
     if(folder&0x8000)std::filesystem::create_directories(path,error);
     if(error){ret(0x80070005u,5);return;}
     if(!(folder&0x4000)&&!std::filesystem::is_directory(path,error)){ret(0x80070003u,5);return;}
@@ -144,22 +272,56 @@ bool writeFindData(uint32_t out,const std::filesystem::path& path){
     uint64_t size=S_ISDIR(status.st_mode)?0:uint64_t(status.st_size);write32(out+28,size>>32);write32(out+32,uint32_t(size));
     std::memcpy(ptr(out+44,name.size()+1),name.c_str(),name.size()+1);return true;
 }
+std::string guestRelativeInsideGame(std::string guest){
+    std::replace(guest.begin(),guest.end(),'\\','/');
+    auto normalized=lower(guest);
+    if(normalized=="c:/nfsmw") return std::string();
+    if(normalized.rfind("c:/nfsmw/",0)==0) return guest.substr(9);
+    if(guest.find(':')!=std::string::npos||guest.rfind("//",0)==0)
+        throw GuestStop("FindFirstFile outside game folder");
+    if(!guest.empty()&&guest.front()=='/') guest.erase(0,1);
+    else {
+        auto current=guestWorkingDirectory.substr(8); std::replace(current.begin(),current.end(),'\\','/');
+        if(!current.empty()) guest=current+"/"+guest;
+    }
+    auto relative=std::filesystem::path(guest).lexically_normal();
+    for(const auto& part:relative) if(part=="..") throw GuestStop("Guest path leaves nfsmw: "+guest);
+    return relative.string()=="."?std::string():relative.string();
+}
+
 void findFirstFile(){
+    ensureGuestModsLoaded();
     auto requested=guestString(arg(0));std::replace(requested.begin(),requested.end(),'\\','/');
     if(requested.empty()||requested.back()=='/'){lastError=123;ret(UINT32_MAX,2);return;}
     auto separator=requested.find_last_of('/');auto pattern=requested.substr(separator==std::string::npos?0:separator+1);
-    auto directory=gamePath(separator==std::string::npos?".":requested.substr(0,separator));
-    std::error_code error;GuestFileSearch search;
-    if(std::filesystem::is_directory(directory,error))for(const char* dot:{".",".."})if(filePatternMatches(pattern,dot))search.paths.push_back(directory/dot);
-    for(auto& entry:std::filesystem::directory_iterator(directory,error)){
-        if(!filePatternMatches(pattern,entry.path().filename().string()))continue;
-        // Apply the same containment check used for ordinary file opens.
-        auto logical="C:/nfsmw/"+entry.path().lexically_relative(std::filesystem::weakly_canonical(hostGameRoot)).string();
-        gamePath(logical);search.paths.push_back(entry.path());
+    std::string dirGuest=separator==std::string::npos?".":requested.substr(0,separator);
+    std::string dirRel;
+    try { dirRel=guestRelativeInsideGame(dirGuest); }
+    catch(const GuestStop&){ lastError=3;ret(UINT32_MAX,2);return; }
+    std::vector<std::filesystem::path> roots; roots.reserve(guestModRoots.size()+1);
+    for(const auto& m:guestModRoots) roots.push_back(m); roots.push_back(std::filesystem::path(hostGameRoot));
+    GuestFileSearch search; std::map<std::string,size_t> seen; bool anyDir=false;
+    for(size_t i=0;i<roots.size();++i){
+        std::error_code error;
+        std::filesystem::path directory;
+        try { directory=resolveGameRelative(dirRel.empty()?".":dirRel,roots[i]); }
+        catch(const GuestStop&){ continue; }
+        if(!std::filesystem::is_directory(directory,error)) continue;
+        anyDir=true;
+        // Report . and .. once, using the base directory when available.
+        if(i+1==roots.size()) for(const char* dot:{".",".."}) if(filePatternMatches(pattern,dot)){
+            auto key=std::string(dot); if(!seen.count(key)){seen[key]=search.paths.size();search.paths.push_back(directory/dot);} }
+        for(auto& entry:std::filesystem::directory_iterator(directory,error)){
+            auto name=entry.path().filename().string();
+            if(!filePatternMatches(pattern,name)) continue;
+            auto key=lower(name);
+            if(seen.count(key)) continue; // higher-priority mod/base already provided this name
+            seen[key]=search.paths.size(); search.paths.push_back(entry.path());
+        }
     }
-    if(error){lastError=error==std::errc::no_such_file_or_directory?3:5;ret(UINT32_MAX,2);return;}
+    if(!anyDir){lastError=3;ret(UINT32_MAX,2);return;}
     if(search.paths.empty()){lastError=2;ret(UINT32_MAX,2);return;}
-    std::sort(search.paths.begin(),search.paths.end());
+    std::sort(search.paths.begin(),search.paths.end(),[](const auto& a,const auto& b){return lower(a.filename().string())<lower(b.filename().string());});
     if(!writeFindData(arg(1),search.paths.front())){ret(UINT32_MAX,2);return;}
     search.next=1;uint32_t handle=nextSearchHandle++;fileSearches.emplace(handle,std::move(search));ret(handle,2);
 }
@@ -168,12 +330,12 @@ void findNextFile(){auto found=fileSearches.find(arg(0));if(found==fileSearches.
     if(!writeFindData(arg(1),search.paths[search.next])){ret(0,2);return;}++search.next;ret(1,2);
 }
 void findClose(){if(!fileSearches.erase(arg(0))){lastError=6;ret(0,1);return;}ret(1,1);}
-void createDirectory(){if(arg(1))throw GuestStop("CreateDirectory security attributes pending");auto path=gamePath(guestString(arg(0)));
+void createDirectory(){if(arg(1))throw GuestStop("CreateDirectory security attributes pending");auto path=gamePath(guestString(arg(0)),true);
     if(::mkdir(path.c_str(),0700)){lastError=errno==EEXIST?183:fileError();ret(0,2);return;}ret(1,2);
 }
 void fullPathName(){
     auto requested=guestString(arg(0));if(requested.empty()){lastError=123;ret(0,4);return;}
-    auto path=gamePath(requested);auto relative=path.lexically_relative(std::filesystem::weakly_canonical(hostGameRoot)).string();
+    auto path=gamePath(requested,true);auto relative=path.lexically_relative(std::filesystem::weakly_canonical(hostGameRoot)).string();
     std::string logical="C:\\nfsmw";if(relative!="."&&!relative.empty())logical+="\\"+relative;
     std::replace(logical.begin(),logical.end(),'/','\\');if(requested.back()=='/'||requested.back()=='\\')logical+='\\';
     uint32_t capacity=arg(1),out=arg(2),part=arg(3);if(capacity<=logical.size()){ret(uint32_t(logical.size()+1),4);return;}
@@ -181,19 +343,19 @@ void fullPathName(){
     std::memcpy(ptr(out,logical.size()+1),logical.c_str(),logical.size()+1);
     if(part)write32(part,logical.back()=='\\'?0:out+uint32_t(logical.find_last_of('\\')+1));ret(uint32_t(logical.size()),4);
 }
-// DeleteFileA / MoveFileA inside the game folder (gamePath refuses anything outside it).
+// DeleteFileA / MoveFileA inside the game folder (writes target the base data, never mod overlays).
 void deleteFile(){
-    auto path=gamePath(guestString(arg(0)));
+    auto path=gamePath(guestString(arg(0)),true);
     if(::unlink(path.c_str())){lastError=fileError();ret(0,1);return;}
     lastError=0;ret(1,1);
 }
 void removeDirectory(){
-    auto path=gamePath(guestString(arg(0)));
+    auto path=gamePath(guestString(arg(0)),true);
     if(::rmdir(path.c_str())){lastError=errno==ENOTEMPTY||errno==EEXIST?145:fileError();ret(0,1);return;}  // ERROR_DIR_NOT_EMPTY
     lastError=0;ret(1,1);
 }
 void moveFile(){
-    auto from=gamePath(guestString(arg(0))),to=gamePath(guestString(arg(1)));
+    auto from=gamePath(guestString(arg(0)),true),to=gamePath(guestString(arg(1)),true);
     struct stat status{};if(!::stat(to.c_str(),&status)){lastError=183;ret(0,2);return;}  // ERROR_ALREADY_EXISTS
     if(::rename(from.c_str(),to.c_str())){lastError=fileError();ret(0,2);return;}
     lastError=0;ret(1,2);
