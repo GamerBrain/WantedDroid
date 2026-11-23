@@ -535,6 +535,14 @@ public final class LauncherActivity extends Activity {
     // ---- Launch ----------------------------------------------------------------------------------------
 
     private void play() {
+        if (BuildConfig.LAUNCHER_ONLY) {
+            new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle(tr("APK de prueba (launcher/UI)"))
+                    .setMessage(tr("Esta compilación permite probar el launcher, el gestor de mods y las opciones, pero no incluye el runtime recompilado ni las fuentes generadas del juego, por lo que no puede iniciar la partida. Para jugar y validar la carga real de mods en partida se requiere un APK completo construido con el pipeline de recompilación y los datos/dependencias del proyecto."))
+                    .setPositiveButton(tr("Aceptar"), null)
+                    .show();
+            return;
+        }
         if (suggestLighterSettings()) return;
         if (android.os.Process.is64Bit() && GpuDrivers.selected(this) != null) probeDriver(true);
         else launch();

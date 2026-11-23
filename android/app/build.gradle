@@ -1,19 +1,28 @@
 plugins { id 'com.android.application' }
+
+def launcherOnly = project.hasProperty('nfsLauncherOnly')
+
 android {
     namespace 'com.nfsmw.androidevolved'
     compileSdk 35
-    ndkVersion '28.2.13676358'
+    if (!launcherOnly) ndkVersion '28.2.13676358'
+    buildFeatures { buildConfig true }
     defaultConfig {
         applicationId 'com.nfsmw.androidevolved'
         minSdk 29
         targetSdk 35
-        versionCode 18
-        versionName '0.1.17'
-        // -PnfsAbi=armeabi-v7a builds the separate 32-bit APK.
-        ndk { abiFilters(project.findProperty('nfsAbi') ?: 'arm64-v8a') }
-        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
+        versionCode 19
+        versionName launcherOnly ? '0.2.0-beta.1-launcher' : '0.1.17'
+        buildConfigField 'boolean', 'LAUNCHER_ONLY', launcherOnly ? 'true' : 'false'
+        if (!launcherOnly) {
+            // -PnfsAbi=armeabi-v7a builds the separate 32-bit APK.
+            ndk { abiFilters(project.findProperty('nfsAbi') ?: 'arm64-v8a') }
+            externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
+        }
     }
-    externalNativeBuild { cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.30.5' } }
+    if (!launcherOnly) {
+        externalNativeBuild { cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.30.5' } }
+    }
     // adrenotools opens its namespace hook libraries by path from nativeLibraryDir.
     packaging { jniLibs { useLegacyPackaging true } }
 }

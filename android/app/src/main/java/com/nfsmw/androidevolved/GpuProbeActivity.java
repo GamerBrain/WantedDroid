@@ -13,7 +13,11 @@ import android.widget.TextView;
  * in a running process, and a broken driver must not take the launcher down with it.
  */
 public final class GpuProbeActivity extends Activity {
-    static { System.loadLibrary("nfsmw_diagnostics"); }
+    private static boolean diagnosticsLoaded;
+    static {
+        try { System.loadLibrary("nfsmw_diagnostics"); diagnosticsLoaded = true; }
+        catch (UnsatisfiedLinkError | SecurityException e) { diagnosticsLoaded = false; }
+    }
     private static native String nativeGpuReport(String hooks, String temp, String directory, String library);
     private boolean finished;
 
@@ -29,9 +33,13 @@ public final class GpuProbeActivity extends Activity {
         String[] loader = GpuDrivers.loaderArguments(this);
         new Thread(() -> {
             String result;
-            try { result = nativeGpuReport(loader[0], loader[1], loader[2], loader[3]); }
-            catch (Exception | LinkageError error) {
-                result = "{\"probeError\":\"No se pudo ejecutar la prueba: " + error.getClass().getSimpleName() + "\",\"driverLoadFailed\":true}";
+            if (!diagnosticsLoaded) {
+                result = "{\"probeError\":\"Diagnóstico nativo no disponible en esta compilación del launcher (solo UI/mods/opciones).\",\"driverLoadFailed\":true}";
+            } else {
+                try { result = nativeGpuReport(loader[0], loader[1], loader[2], loader[3]); }
+                catch (Exception | LinkageError error) {
+                    result = "{\"probeError\":\"No se pudo ejecutar la prueba: " + error.getClass().getSimpleName() + "\",\"driverLoadFailed\":true}";
+                }
             }
             String report = result;
             main.post(() -> finishReport(report));

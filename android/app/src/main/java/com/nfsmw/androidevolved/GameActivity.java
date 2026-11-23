@@ -26,7 +26,11 @@ import android.util.DisplayMetrics;
 
 /** Storage permission gateway for the fixed Internal storage/nfsmw directory. */
 public final class GameActivity extends NativeActivity {
-    static { System.loadLibrary("nfsmw_android"); }
+    private static boolean nativeLoaded;
+    static {
+        try { System.loadLibrary("nfsmw_android"); nativeLoaded = true; }
+        catch (UnsatisfiedLinkError | SecurityException e) { nativeLoaded = false; }
+    }
     private boolean requested;
     private boolean foreground;
     private TextView status;
@@ -206,6 +210,16 @@ public final class GameActivity extends NativeActivity {
         dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
     }
     @Override protected void onCreate(Bundle saved) {
+        if (!nativeLoaded) {
+            super.onCreate(saved);
+            android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
+            b.setTitle("NFSMW Android Evolved");
+            b.setMessage("Este APK es una compilación de prueba del launcher/UI (mods y opciones). No incluye el runtime nativo recompilado del juego ni las fuentes generadas, por lo que no puede iniciar la partida. Puedes probar el launcher, el gestor de mods y las opciones.");
+            b.setCancelable(false);
+            b.setPositiveButton("OK", (d, w) -> finish());
+            b.show();
+            return;
+        }
         // NetBIOS supplies the PC game's machine identity. Keep a random ID
         // private to this installation (backup is disabled), across upgrades
         // and both APK architectures. The shared game path is not a device ID.
