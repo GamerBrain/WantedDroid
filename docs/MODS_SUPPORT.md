@@ -13,9 +13,10 @@ Este fork añade una base de **mods por superposición de archivos (overlay)** p
 
 ## Uso
 
-1. Copia o instala mods en `nfsmw/Mods/<NombreDelMod>/` con la misma estructura de carpetas/archivos que el juego (`GLOBAL`, `CARS`, `TRACKS`, `TEXTURES`, `SOUND`, etc.).
-2. En el launcher abre **Mods** para instalar un `.zip`, activar/desactivar o eliminar mods.
-3. Pulsa **JUGAR**: los mods habilitados se cargan al iniciar el proceso del juego.
+1. Copia o instala mods en `<carpeta nfsmw detectada>/Mods/<NombreDelMod>/` con la misma estructura de carpetas/archivos que el juego (`GLOBAL`, `CARS`, `TRACKS`, `TEXTURES`, `SOUND`, etc.). Por defecto: `nfsmw/Mods/` en la memoria interna.
+2. La app detecta automáticamente la carpeta `nfsmw` en la memoria interna del teléfono (ruta recomendada: `Almacenamiento interno/nfsmw`).
+3. En el launcher abre **Mods** para instalar un `.zip`, activar/desactivar o eliminar mods.
+4. Pulsa **JUGAR**: los mods habilitados se cargan al iniciar el proceso del juego.
 
 ## Metadatos opcionales
 

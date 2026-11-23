@@ -166,6 +166,7 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeBackBuffers(int count);
     private static native void nativeCpuTextures(boolean enabled);
     private static native void nativeGpuDriver(String hooks, String temp, String directory, String library);
+    private static native void nativeGameRoot(String path);
     private void showFrameLimitOptions() {
         GameOptions.Option option=GameOptions.find(GameOptions.FPS);
         String saved=GameOptions.get(this,GameOptions.FPS);int selected=0;
@@ -261,6 +262,9 @@ public final class GameActivity extends NativeActivity {
         nativeBackBuffers(launch.getIntExtra("backBuffers", Integer.parseInt(GameOptions.get(this, GameOptions.LATENCY))));
         nativeCpuTextures(launch.getBooleanExtra("cpuTextures", GameOptions.get(this, GameOptions.TEXTURES).equals("cpu")));
         padJoystick = launch.getBooleanExtra("padJoystick", GameOptions.get(this, GameOptions.GAMEPAD).equals("directinput"));
+        String gameRoot = launch.getStringExtra("gameRoot");
+        if (gameRoot == null || gameRoot.trim().isEmpty()) gameRoot = GamePaths.getGameRootPath();
+        nativeGameRoot(gameRoot);
         String[] loader = launch.getStringArrayExtra("driverLoader");
         if (loader == null || loader.length != 4) loader = GpuDrivers.loaderArguments(this);
         nativeGpuDriver(loader[0], loader[1], loader[2], loader[3]);
@@ -269,7 +273,7 @@ public final class GameActivity extends NativeActivity {
         status.setBackgroundColor(0xb0000000);
         status.setTextSize(18);
         status.setPadding(24, 16, 24, 16);
-        status.setText("NFS Most Wanted Android Evolved\nComprobando memoria interna/nfsmw…");
+        status.setText("NFS Most Wanted Android Evolved\nComprobando carpeta nfsmw en la memoria interna…\n" + gameRoot);
         // NativeActivity gives its main window surface to Vulkan; use a separate
         // non-interactive popup surface for the diagnostic text.
         statusWindow = new PopupWindow(status, ViewGroup.LayoutParams.WRAP_CONTENT,

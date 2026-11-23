@@ -11,8 +11,8 @@ android {
         applicationId 'com.nfsmw.androidevolved'
         minSdk 29
         targetSdk 35
-        versionCode 20
-        versionName launcherOnly ? '0.2.0-beta.1.1-launcher' : '0.2.0-beta.1.1'
+        versionCode 21
+        versionName launcherOnly ? '1.2.0-beta-launcher' : '1.2.0-beta'
         buildConfigField 'boolean', 'LAUNCHER_ONLY', launcherOnly ? 'true' : 'false'
         if (!launcherOnly) {
             // -PnfsAbi=armeabi-v7a builds the separate 32-bit APK.

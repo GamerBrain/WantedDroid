@@ -32,11 +32,12 @@ Para que el botón **Jugar** ejecute el juego en el teléfono se necesita un **A
 
 ## Archivos del juego en el teléfono (no se incluyen en el APK)
 
-El APK completo detecta los datos del juego desde el almacenamiento interno:
+El APK detecta automáticamente la carpeta de datos del juego en la memoria interna/compartida del teléfono:
 
-- Ruta: **`Almacenamiento interno/nfsmw`** (`/storage/emulated/0/nfsmw`)
+- Ruta recomendada: **`Almacenamiento interno/nfsmw`** (`/storage/emulated/0/nfsmw`)
+- También se detecta si la carpeta `nfsmw` (sin importar mayúsculas/minúsculas) está en otras ubicaciones comunes de la memoria interna.
 - Coloca directamente en esa carpeta: `Speed.exe`, `GLOBAL/`, `TRACKS/`, `CARS/`, `FRONTEND/`, `LANGUAGES/`, etc. (sin anidar `nfsmw/nfsmw/...`).
-- Concede permiso de acceso a archivos en el launcher y verifica que los checks aparezcan en verde.
+- Concede permiso de acceso a archivos en el launcher; cuando la carpeta sea detectada y válida, se podrá pulsar **JUGAR**.
 
 ## Nota sobre pruebas sin artefactos generados
 

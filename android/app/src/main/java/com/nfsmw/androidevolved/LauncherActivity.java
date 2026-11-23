@@ -195,23 +195,24 @@ public final class LauncherActivity extends Activity {
 
     private void refresh() {
         boolean allowed = allowed();
+        GamePaths.clearCache();
         File root = gameRoot();
         checksList.removeAllViews();
-        boolean exe = allowed && new File(root, "Speed.exe").isFile();
-        addCheck("Speed.exe", exe, true);
+        boolean exe = allowed && (new File(root, "Speed.exe").isFile() || new File(root, "speed.exe").isFile());
+        addCheck(exe ? "Speed.exe (" + root.getAbsolutePath() + ")" : "Speed.exe", exe, true);
         StringBuilder missing = new StringBuilder();
         for (String folder : new String[] {"GLOBAL", "TRACKS", "CARS", "FRONTEND", "LANGUAGES"})
             if (!(allowed && new File(root, folder).isDirectory())) missing.append(missing.length() == 0 ? "" : ", ").append(folder);
         addCheck(missing.length() == 0 ? tr("Carpetas del juego") : tr("Faltan carpetas: %s", missing), missing.length() == 0, true);
         boolean language = allowed && !languages().isEmpty();
         if (exe && !language) addCheck(tr("Falta LANGUAGES/<idioma>.bin"), false, true);
-        boolean ready = exe && language;
+        boolean ready = exe && language && missing.length() == 0;
         if (allowed && !root.isDirectory()) root.mkdirs();  // Show the player where the files go.
         String nested = allowed && !exe ? nestedGameFolder(root) : null;
-        status.setText(!allowed ? tr("Permite el acceso a archivos para leer memoria interna/nfsmw.")
-                : ready ? tr("Memoria interna/nfsmw")
-                : nested != null ? tr("Los archivos están en «%s»: mueve su contenido directamente a memoria interna/nfsmw.", nested)
-                : tr("Copia los archivos de tu juego (Speed.exe y sus carpetas) dentro de:\n%s", root.getAbsolutePath()));
+        status.setText(!allowed ? tr("Permite el acceso a archivos para leer la carpeta nfsmw en la memoria interna.")
+                : ready ? tr("Carpeta detectada: %s", root.getAbsolutePath())
+                : nested != null ? tr("Los archivos están en «%s»: mueve su contenido directamente a %s.", nested, root.getAbsolutePath())
+                : tr("Copia los archivos de tu juego (Speed.exe y sus carpetas) dentro de una carpeta \"nfsmw\" en la memoria interna, por ejemplo:\n%s", root.getAbsolutePath()));
         play.setEnabled(ready);
         play.setAlpha(ready ? 1f : .45f);
         access.setVisibility(allowed ? View.GONE : View.VISIBLE);
@@ -244,7 +245,7 @@ public final class LauncherActivity extends Activity {
         if (children == null) return null;
         for (File child : children)
             if (child.isDirectory() && (new File(child, "Speed.exe").isFile() || new File(child, "speed.exe").isFile()))
-                return "nfsmw/" + child.getName();
+                return root.getName() + "/" + child.getName();
         return null;
     }
 
@@ -628,6 +629,7 @@ public final class LauncherActivity extends Activity {
                 Math.min(metrics.widthPixels, metrics.heightPixels));
         String[] loader = GpuDrivers.loaderArguments(this);
         startActivity(new Intent(this, GameActivity.class)
+                .putExtra("gameRoot", gameRoot().getAbsolutePath())
                 .putExtra("language", GameOptions.language(this))
                 .putExtra("renderWidth", size[0]).putExtra("renderHeight", size[1])
                 .putExtra("frameCap", Integer.parseInt(GameOptions.get(this, GameOptions.FPS)))
@@ -797,7 +799,7 @@ public final class LauncherActivity extends Activity {
 
     // ---- Storage ---------------------------------------------------------------------------------------
 
-    private static File gameRoot() { return new File(Environment.getExternalStorageDirectory(), "nfsmw"); }
+    private static File gameRoot() { return GamePaths.getGameRoot(); }
 
     private boolean allowed() {
         return Build.VERSION.SDK_INT >= 30 ? Environment.isExternalStorageManager()

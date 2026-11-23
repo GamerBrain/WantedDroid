@@ -1,5 +1,23 @@
 # Need for Speed Most Wanted (2005, PC) — Recompiled
 
+> **Fork (GamerBrain/WantedDroid) — Beta 1.2.0 (`v1.2.0-beta`)**  
+> Este fork incorpora detección automática de la carpeta de datos del juego en la memoria interna del teléfono y mejoras de integración/ruta para poder ejecutar el juego cuando la carpeta `nfsmw` es detectada. Ver cambios abajo.
+
+## What's new in 1.2.0-beta / Novedades de 1.2.0-beta
+
+**EN**
+- **Automatic `nfsmw` data folder detection (internal/shared storage):** the launcher now scans common internal-storage locations (including case-insensitive matches and typical nested locations) and selects the best/most complete game installation.
+- **Dynamic game path propagation:** detected path is passed from launcher (`LauncherActivity`) to `GameActivity` and native runtime (`nativeGameRoot`), so validation and guest boot use the resolved `Speed.exe` path/folder.
+- **Mod path follows detected game folder:** mod management and runtime mod overlay root are resolved from the detected `nfsmw` folder (`<detected nfsmw>/Mods`).
+- **UX/docs updates:** launcher/status messages reflect the detected path; docs updated to describe automatic detection (recommended: `Internal storage/nfsmw`).
+- **Rust implementation status (coexistence scaffold):** `rust/nfsmw_mods` provides mod manifest/config modeling, safe path/folder validation, overlay helpers and C FFI exports (`nfsmw_mods_is_safe_folder_name`, `nfsmw_mods_is_safe_relative_path`) with unit tests and C header. Native CMake can optionally link a prebuilt Rust static lib via `NFSMW_RUST_MODS_LIB` (`NFS_RUST_MODS`). It is not auto-built/wired by default Gradle and currently has no native call sites in the runtime path (foundation for incremental Rust adoption). Approx. source-byte share in this repo snapshot: **Rust 6,660 B (~0.66%)** of ~1.01 MB non-binary files by extension (GitHub Linguist may classify differently).
+
+**ES**
+- **Detección automática de la carpeta `nfsmw` (memoria interna/compartida):** el launcher ahora busca en ubicaciones comunes de la memoria interna (incluye coincidencias sin distinguir mayúsculas/minúsculas y ubicaciones anidadas típicas) y selecciona la instalación más completa/válida.
+- **Propagación dinámica de la ruta del juego:** la ruta detectada se pasa del launcher (`LauncherActivity`) a `GameActivity` y al runtime nativo (`nativeGameRoot`), para que la validación y el arranque del guest usen la carpeta/`Speed.exe` resueltos.
+- **Mods desde la carpeta detectada:** la gestión de mods y la raíz de overlay nativo se resuelven desde la carpeta `nfsmw` detectada (`<nfsmw detectado>/Mods`).
+- **Actualizaciones de UI/documentación:** mensajes/estado reflejan la ruta detectada; documentación actualizada para indicar la detección automática (recomendado: `Memoria interna/nfsmw`).
+- **Estado de implementación de Rust (andamiaje de coexistencia):** `rust/nfsmw_mods` aporta modelo de manifiesto/config de mods, validación segura de rutas/nombres, utilidades de overlay y exports C FFI (`nfsmw_mods_is_safe_folder_name`, `nfsmw_mods_is_safe_relative_path`) con pruebas unitarias y cabecera C. CMake puede enlazar opcionalmente una librería estática Rust precompilada vía `NFSMW_RUST_MODS_LIB` (`NFS_RUST_MODS`). No se compila/integra automáticamente desde Gradle por defecto y actualmente no tiene llamadas nativas en la ruta de runtime (base para adopción incremental de Rust). Proporción aproximada por bytes de código fuente en esta copia: **Rust 6.660 B (~0,66%)** de ~1,01 MB de archivos no binarios por extensión (GitHub Linguist puede clasificar distinto).
 
 ### Android downloads / Descargas Android
 

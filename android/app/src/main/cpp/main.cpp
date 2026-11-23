@@ -40,6 +40,21 @@ static void showStatus(android_app* app, const char* message) {
     app->activity->vm->DetachCurrentThread();
 }
 
+static std::mutex g_gameRootMutex;
+static std::string g_gameRoot = "/storage/emulated/0/nfsmw";
+
+static void setConfiguredGameRoot(const std::string& path) {
+    if (path.empty()) return;
+    std::lock_guard<std::mutex> lock(g_gameRootMutex);
+    g_gameRoot = path;
+    __android_log_print(ANDROID_LOG_INFO, "NFSMW", "Configured game root: %s", g_gameRoot.c_str());
+}
+
+static std::string resolvedGameRoot() {
+    std::lock_guard<std::mutex> lock(g_gameRootMutex);
+    return g_gameRoot;
+}
+
 // Independent bring-up target. No guest game code is executed yet.
 static void check(VkResult r, const char* operation) {
     if (r != VK_SUCCESS) throw std::runtime_error(std::string(operation) + ": " + std::to_string(r));
@@ -427,7 +442,8 @@ void android_main(android_app* app) {
             setGuestPaused(false);
             if(!customVulkanError.empty())throw std::runtime_error(customVulkanError);
             if (!host.renderer.device&&!d3d9RequestsSurface()&&!(customVulkanDriver&&host.guestAttempted)) {
-                checkGameData();
+                const std::string gameRoot = resolvedGameRoot();
+                checkGameData(gameRoot);
                 if(customVulkanDriver){
                     setGuestDisplaySize(unsigned(ANativeWindow_getWidth(app->window)),unsigned(ANativeWindow_getHeight(app->window)));
                 }else{
@@ -436,13 +452,13 @@ void android_main(android_app* app) {
                 }
                 if (!host.guestAttempted) {
                     host.guestAttempted = true;
-                    host.guestWorker.start(std::string(kGameRoot) + "/speed.exe");
+                    host.guestWorker.start(nfsmwResolveGameExe(gameRoot));
                 }
             }
             auto status=host.guestWorker.status();
             if(status!=host.guestStatus){
                 host.guestStatus=status;
-                showStatus(app,("Datos accesibles: memoria interna/nfsmw\nVulkan 1.1: presentación activa\n"+status).c_str());
+                showStatus(app,("Datos del juego: "+resolvedGameRoot()+"\nVulkan 1.1: presentación activa\n"+status).c_str());
             }
             if (host.renderer.device&&!host.renderer.draw()) host.renderer.stop();
         } catch (const std::exception& e) {
@@ -453,4 +469,10 @@ void android_main(android_app* app) {
     }
     host.renderer.stop();
     acknowledgeD3D9Surface(false);setD3D9HostWindow(nullptr);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeGameRoot(JNIEnv* env,jclass,jstring path){
+    if(!path) return;
+    const char* text=env->GetStringUTFChars(path,nullptr);
+    if(text){ setConfiguredGameRoot(text); env->ReleaseStringUTFChars(path,text); }
 }

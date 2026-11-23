@@ -51,7 +51,7 @@ public final class ModManager {
     private ModManager() {}
 
     public static File gameRoot() {
-        return new File(android.os.Environment.getExternalStorageDirectory(), "nfsmw");
+        return GamePaths.getGameRoot();
     }
 
     public static File modsRoot() {
